@@ -2,11 +2,11 @@ import { describe, test, expect } from "bun:test";
 import { INSTRUCTIONS, ALL_TOOLS } from "../src/server.js";
 
 describe("server — tools registration", () => {
-  test("ListTools returns exactly 14 tools", () => {
-    expect(ALL_TOOLS).toHaveLength(14);
+  test("ListTools returns exactly 17 tools", () => {
+    expect(ALL_TOOLS).toHaveLength(17);
   });
 
-  test("all 14 expected tool names are registered", () => {
+  test("all 17 expected tool names are registered", () => {
     const names = ALL_TOOLS.map((t: { name: string }) => t.name);
     const expected = [
       "db_query",
@@ -23,6 +23,9 @@ describe("server — tools registration", () => {
       "db_snippet_delete",
       "db_credentials_save",
       "db_credentials_clear",
+      "db_describe_many",
+      "db_suggest_query",
+      "db_report_run",
     ];
     for (const name of expected) {
       expect(names).toContain(name);
@@ -57,5 +60,19 @@ describe("server — instructions field", () => {
   test("INSTRUCTIONS mentions read-only default", () => {
     const lower = INSTRUCTIONS.toLowerCase();
     expect(lower.includes("read-only") || lower.includes("readonly") || lower.includes("read only")).toBe(true);
+  });
+
+  test("INSTRUCTIONS mentions at least one report tool", () => {
+    const hasReportTool =
+      INSTRUCTIONS.includes("db_describe_many") ||
+      INSTRUCTIONS.includes("db_suggest_query") ||
+      INSTRUCTIONS.includes("db_report_run");
+    expect(hasReportTool).toBe(true);
+  });
+
+  test("INSTRUCTIONS is under 120-token budget (approx char limit 600)", () => {
+    // Rough approximation: ~4 chars per token → 120 tokens ≈ 480 chars (conservative)
+    // We use 600 as generous upper bound to avoid false failures from minor wording
+    expect(INSTRUCTIONS.length).toBeLessThan(600);
   });
 });

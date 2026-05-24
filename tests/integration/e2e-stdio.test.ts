@@ -130,8 +130,8 @@ describe("e2e stdio — initialize handshake", () => {
   });
 });
 
-describe("e2e stdio — tools/list returns 14 tools", () => {
-  it("lists exactly 14 tools after initialize", async () => {
+describe("e2e stdio — tools/list returns 17 tools", () => {
+  it("lists exactly 17 tools after initialize", async () => {
     const responses = await sendMany([
       INIT_REQUEST,
       { jsonrpc: "2.0", id: 2, method: "tools/list", params: {} },
@@ -142,7 +142,7 @@ describe("e2e stdio — tools/list returns 14 tools", () => {
 
     const result = listResp!["result"] as Record<string, unknown>;
     const tools = result["tools"] as unknown[];
-    expect(tools).toHaveLength(14);
+    expect(tools).toHaveLength(17);
   });
 });
 

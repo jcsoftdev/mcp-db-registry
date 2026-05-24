@@ -31,6 +31,11 @@ import {
   db_credentials_save,
   db_credentials_clear,
 } from "./tools/creds.js";
+import {
+  db_describe_many,
+  db_suggest_query,
+  db_report_run,
+} from "./tools/report.js";
 import { resolveConnection } from "./discovery/resolve.js";
 import { CredentialsStore } from "./store/credentials.js";
 import { SnippetsStore } from "./store/snippets.js";
@@ -52,12 +57,110 @@ import { spawnSync } from "node:child_process";
 export { INSTRUCTIONS } from "./instructions.js";
 export { ALL_TOOLS } from "./tool-descriptors.js";
 
-function detectGitRemote(): string | null {
+export function detectGitRemote(): string | null {
   try {
     const r = spawnSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" });
     if (r.status === 0) return r.stdout.trim() || null;
   } catch {}
   return null;
+}
+
+// ─── ServerContext: injectable dependencies for routeTool ──────────────────
+
+export interface ServerContext {
+  dbDeps: DbDeps;
+  project: string;
+  snippetStore: SnippetsStore;
+  credStore: CredentialsStore;
+}
+
+// ─── routeTool: pure dispatch function, testable in-process ───────────────
+
+export async function routeTool(
+  name: string,
+  args: Record<string, unknown>,
+  ctx: ServerContext
+): Promise<unknown> {
+  const { dbDeps, project, snippetStore, credStore } = ctx;
+
+  switch (name) {
+    case "db_query":
+      return await db_query(args as Parameters<typeof db_query>[0], dbDeps);
+    case "db_list":
+      return await db_list(args as Parameters<typeof db_list>[0], dbDeps);
+    case "db_describe":
+      return await db_describe(args as Parameters<typeof db_describe>[0], dbDeps);
+    case "db_explain":
+      return await db_explain(args as Parameters<typeof db_explain>[0], dbDeps);
+    case "db_connection_info":
+      return await db_connection_info(args as Parameters<typeof db_connection_info>[0], dbDeps);
+    case "db_engines":
+      return await db_engines(args as Record<string, never>, dbDeps);
+
+    case "db_snippet_save":
+      return await db_snippet_save(args as Parameters<typeof db_snippet_save>[0], {
+        project,
+        snippetStore,
+        queryRunner: (a: unknown, _d: unknown) =>
+          db_query(a as Parameters<typeof db_query>[0], dbDeps),
+        queryDeps: dbDeps,
+      });
+    case "db_snippet_run":
+      return await db_snippet_run(args as Parameters<typeof db_snippet_run>[0], {
+        project,
+        snippetStore,
+        queryRunner: (a: unknown, _d: unknown) =>
+          db_query(a as Parameters<typeof db_query>[0], dbDeps),
+        queryDeps: dbDeps,
+      });
+    case "db_snippet_get":
+      return await db_snippet_get(args as Parameters<typeof db_snippet_get>[0], {
+        project,
+        snippetStore,
+      });
+    case "db_snippet_search":
+      return await db_snippet_search(args as Parameters<typeof db_snippet_search>[0], {
+        project,
+        snippetStore,
+      });
+    case "db_snippet_list":
+      return await db_snippet_list(args as Parameters<typeof db_snippet_list>[0], {
+        project,
+        snippetStore,
+      });
+    case "db_snippet_delete":
+      return await db_snippet_delete(args as Parameters<typeof db_snippet_delete>[0], {
+        project,
+        snippetStore,
+      });
+
+    case "db_credentials_save":
+      return await db_credentials_save(args as Parameters<typeof db_credentials_save>[0], {
+        project,
+        credStore,
+      });
+    case "db_credentials_clear":
+      return await db_credentials_clear(args as Parameters<typeof db_credentials_clear>[0], {
+        project,
+        credStore,
+      });
+
+    case "db_describe_many":
+      return await db_describe_many(args as Parameters<typeof db_describe_many>[0], dbDeps);
+    case "db_suggest_query":
+      return await db_suggest_query(args as Parameters<typeof db_suggest_query>[0], dbDeps);
+    case "db_report_run":
+      return await db_report_run(args as Parameters<typeof db_report_run>[0], {
+        ...dbDeps,
+        project,
+        snippetStore,
+        queryRunner: (a: unknown) =>
+          db_query(a as Parameters<typeof db_query>[0], dbDeps),
+      });
+
+    default:
+      return toolError(`Unknown tool: ${name}`);
+  }
 }
 
 async function main(): Promise<void> {
@@ -91,6 +194,8 @@ async function main(): Promise<void> {
       }),
   };
 
+  const ctx: ServerContext = { dbDeps, project, snippetStore, credStore };
+
   const { INSTRUCTIONS } = await import("./instructions.js");
   const { ALL_TOOLS } = await import("./tool-descriptors.js");
 
@@ -106,71 +211,7 @@ async function main(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name, arguments: args = {} } = req.params;
     try {
-      switch (name) {
-        case "db_query":
-          return await db_query(args as Parameters<typeof db_query>[0], dbDeps);
-        case "db_list":
-          return await db_list(args as Parameters<typeof db_list>[0], dbDeps);
-        case "db_describe":
-          return await db_describe(args as Parameters<typeof db_describe>[0], dbDeps);
-        case "db_explain":
-          return await db_explain(args as Parameters<typeof db_explain>[0], dbDeps);
-        case "db_connection_info":
-          return await db_connection_info(args as Parameters<typeof db_connection_info>[0], dbDeps);
-        case "db_engines":
-          return await db_engines(args as Record<string, never>, dbDeps);
-
-        case "db_snippet_save":
-          return await db_snippet_save(args as Parameters<typeof db_snippet_save>[0], {
-            project,
-            snippetStore,
-            queryRunner: (a: unknown, _d: unknown) =>
-              db_query(a as Parameters<typeof db_query>[0], dbDeps),
-            queryDeps: dbDeps,
-          });
-        case "db_snippet_run":
-          return await db_snippet_run(args as Parameters<typeof db_snippet_run>[0], {
-            project,
-            snippetStore,
-            queryRunner: (a: unknown, _d: unknown) =>
-              db_query(a as Parameters<typeof db_query>[0], dbDeps),
-            queryDeps: dbDeps,
-          });
-        case "db_snippet_get":
-          return await db_snippet_get(args as Parameters<typeof db_snippet_get>[0], {
-            project,
-            snippetStore,
-          });
-        case "db_snippet_search":
-          return await db_snippet_search(args as Parameters<typeof db_snippet_search>[0], {
-            project,
-            snippetStore,
-          });
-        case "db_snippet_list":
-          return await db_snippet_list(args as Parameters<typeof db_snippet_list>[0], {
-            project,
-            snippetStore,
-          });
-        case "db_snippet_delete":
-          return await db_snippet_delete(args as Parameters<typeof db_snippet_delete>[0], {
-            project,
-            snippetStore,
-          });
-
-        case "db_credentials_save":
-          return await db_credentials_save(args as Parameters<typeof db_credentials_save>[0], {
-            project,
-            credStore,
-          });
-        case "db_credentials_clear":
-          return await db_credentials_clear(args as Parameters<typeof db_credentials_clear>[0], {
-            project,
-            credStore,
-          });
-
-        default:
-          return toolError(`Unknown tool: ${name}`);
-      }
+      return await routeTool(name, args as Record<string, unknown>, ctx);
     } catch (err) {
       return toolError(err instanceof Error ? err.message : String(err));
     }

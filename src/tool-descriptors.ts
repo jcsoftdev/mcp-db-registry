@@ -79,6 +79,7 @@ export const ALL_TOOLS = [
         body: { type: "string" },
         description: { type: "string" },
         tags: { type: "array", items: { type: "string" } },
+        category: { type: "string", maxLength: 80, description: "Optional grouping label (free-text). Indexed in FTS5." },
         paramsSchema: { type: "object" },
       },
     },
@@ -123,12 +124,13 @@ export const ALL_TOOLS = [
   },
   {
     name: "db_snippet_list",
-    description: "List snippets (no bodies). Optionally filter by engine.",
+    description: "List snippets (no bodies). Optionally filter by engine or category.",
     inputSchema: {
       type: "object" as const,
       properties: {
         engine: { type: "string", enum: ["postgres", "mysql", "mongo", "redis", "sqlite"] },
         sort: { type: "string" },
+        category: { type: "string", description: "Filter list to snippets with this category (exact match)." },
       },
     },
   },
@@ -166,6 +168,60 @@ export const ALL_TOOLS = [
       properties: {
         engine: { type: "string", enum: ["postgres", "mysql", "mongo", "redis", "sqlite"] },
         name: { type: "string", description: "Connection name (default: main)." },
+      },
+    },
+  },
+  {
+    name: "db_describe_many",
+    description: "Describe many tables in one call. Returns schemas in input order; absent tables go to errors[].",
+    inputSchema: {
+      type: "object" as const,
+      required: ["engine", "tables"],
+      properties: {
+        engine: { type: "string", enum: ["postgres", "mysql", "mongo", "redis", "sqlite"] },
+        tables: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 20 },
+        connection: { type: "string", description: "Connection name (default: main)." },
+      },
+    },
+  },
+  {
+    name: "db_suggest_query",
+    description: "Build a FK-aware SQL skeleton joining requested tables. Does NOT execute. Warnings flag disconnected tables (no silent cartesian).",
+    inputSchema: {
+      type: "object" as const,
+      required: ["engine", "intent", "tables"],
+      properties: {
+        engine: { type: "string", enum: ["postgres", "mysql", "mongo", "redis", "sqlite"] },
+        intent: { type: "string", description: "Human-readable purpose; embedded as comment in generated SQL." },
+        tables: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 10 },
+        connection: { type: "string", description: "Connection name (default: main)." },
+      },
+    },
+  },
+  {
+    name: "db_report_run",
+    description: "Run multiple saved snippets and merge results. Per-snippet write-guard enforced. merge: object|union|join.",
+    inputSchema: {
+      type: "object" as const,
+      required: ["engine", "snippet_names"],
+      properties: {
+        engine: { type: "string", enum: ["postgres", "mysql", "mongo", "redis", "sqlite"] },
+        snippet_names: { type: "array", items: { type: "string" }, minItems: 1, maxItems: 20 },
+        merge: { type: "string", enum: ["object", "union", "join"], default: "object" },
+        join_on: {
+          type: "array",
+          items: {
+            type: "object",
+            required: ["snippet_name", "column"],
+            properties: {
+              snippet_name: { type: "string" },
+              column: { type: "string" },
+            },
+          },
+          description: "Required when merge='join'. One entry per snippet specifying the join key column.",
+        },
+        connection: { type: "string", description: "Connection name (default: main)." },
+        cap: { type: "integer", minimum: 1, maximum: 1000, default: 1000, description: "Merged-row cap." },
       },
     },
   },
