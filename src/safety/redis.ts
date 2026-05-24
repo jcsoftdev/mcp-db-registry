@@ -1,0 +1,23 @@
+const REDIS_WRITES: ReadonlySet<string> = new Set([
+  "SET", "SETEX", "SETNX", "PSETEX", "MSET", "MSETNX", "GETSET", "GETDEL", "GETEX",
+  "APPEND", "INCR", "INCRBY", "INCRBYFLOAT", "DECR", "DECRBY", "SETRANGE",
+  "DEL", "UNLINK", "EXPIRE", "PEXPIRE", "EXPIREAT", "PEXPIREAT", "PERSIST",
+  "RENAME", "RENAMENX", "RESTORE", "COPY", "MOVE", "OBJECT",
+  "LPUSH", "RPUSH", "LPUSHX", "RPUSHX", "LPOP", "RPOP",
+  "LSET", "LREM", "LTRIM", "LINSERT", "LMOVE", "LMPOP",
+  "BLPOP", "BRPOP", "BLMOVE",
+  "SADD", "SREM", "SPOP", "SMOVE", "SDIFFSTORE", "SINTERSTORE", "SUNIONSTORE", "SINTERCARD",
+  "ZADD", "ZREM", "ZINCRBY", "ZPOPMIN", "ZPOPMAX", "ZRANGESTORE",
+  "ZDIFFSTORE", "ZINTERSTORE", "ZUNIONSTORE", "ZMPOP", "BZPOPMIN", "BZPOPMAX",
+  "HSET", "HSETNX", "HMSET", "HDEL", "HINCRBY", "HINCRBYFLOAT",
+  "FLUSHDB", "FLUSHALL",
+  "CONFIG", // CONFIG SET
+  "CLIENT",
+  "DEBUG", "SHUTDOWN", "SCRIPT", "FUNCTION", "XADD", "XDEL", "XTRIM", "XGROUP",
+  "SORT", // SORT can have STORE
+]);
+
+export function isReadOnlyRedisCmd(argv: string[]): boolean {
+  if (!argv.length) return true;
+  return !REDIS_WRITES.has(argv[0].toUpperCase());
+}
