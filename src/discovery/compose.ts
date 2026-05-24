@@ -1,5 +1,6 @@
 import { parse as parseYaml } from "yaml";
 import type { Engine } from "../types.js";
+import { interpolateNode, RequiredVarError } from "./interpolate.js";
 
 // Image regex patterns per engine — match common official image names
 const ENGINE_IMAGE_RE: Record<Engine, RegExp> = {
@@ -19,7 +20,21 @@ type PartialConfig = {
   database?: string;
 };
 
-export function parseCompose(content: string, engine: Engine): PartialConfig | null {
+/**
+ * Parses a docker-compose document and extracts a partial config for the requested engine.
+ *
+ * @param content Raw YAML content of docker-compose.yml.
+ * @param engine  Engine to look up.
+ * @param env     Optional map of variables used for Compose-style interpolation
+ *                (`${VAR}`, `${VAR:-default}`, etc.). Callers typically pass
+ *                `{ ...envFile, ...process.env }` so shell env wins over the local `.env`,
+ *                matching Docker Compose's own precedence.
+ */
+export function parseCompose(
+  content: string,
+  engine: Engine,
+  env: Record<string, string> = {}
+): PartialConfig | null {
   let doc: unknown;
   try {
     doc = parseYaml(content);
@@ -28,6 +43,17 @@ export function parseCompose(content: string, engine: Engine): PartialConfig | n
   }
 
   if (!doc || typeof doc !== "object") return null;
+
+  // Apply Compose variable interpolation to every string in the document before
+  // we extract fields. A missing required variable (${VAR:?...}) collapses the
+  // whole parse so resolution falls through to the next discovery layer.
+  try {
+    doc = interpolateNode(doc, env);
+  } catch (e) {
+    if (e instanceof RequiredVarError) return null;
+    throw e;
+  }
+
   const root = doc as Record<string, unknown>;
   const services = root["services"];
   if (!services || typeof services !== "object") return null;

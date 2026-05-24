@@ -109,9 +109,10 @@ export async function resolveConnection(opts: ResolveOpts): Promise<ResolvedConf
       envContent = await readFile(envPath, "utf8").catch(() => "");
     }
   }
+  // Parse .env once — used both for direct config mapping and for compose interpolation.
+  const envFromFile = envContent ? parseEnvFile(envContent) : {};
   if (envContent) {
-    const env = parseEnvFile(envContent);
-    const fromEnv = mapEnvToConfig(env, opts.engine);
+    const fromEnv = mapEnvToConfig(envFromFile, opts.engine);
     if (fromEnv) {
       const cfg = buildConfig(fromEnv, opts.engine, "env");
       cache(key, cfg, envMtime);
@@ -130,7 +131,12 @@ export async function resolveConnection(opts: ResolveOpts): Promise<ResolvedConf
     }
   }
   if (composeContent) {
-    const fromCompose = parseCompose(composeContent, opts.engine);
+    // Compose precedence: shell env wins over .env for interpolation.
+    const interpolationEnv: Record<string, string> = { ...envFromFile };
+    for (const [k, v] of Object.entries(process.env)) {
+      if (typeof v === "string") interpolationEnv[k] = v;
+    }
+    const fromCompose = parseCompose(composeContent, opts.engine, interpolationEnv);
     if (fromCompose) {
       const cfg = buildConfig(fromCompose, opts.engine, "compose");
       cache(key, cfg, envMtime, composeMtime);

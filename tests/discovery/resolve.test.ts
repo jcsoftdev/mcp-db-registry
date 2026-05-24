@@ -149,6 +149,98 @@ describe("resolveConnection — cache", () => {
   });
 });
 
+// ── compose interpolation: .env feeds variables into docker-compose.yml ─────
+
+describe("resolveConnection — compose interpolation", () => {
+  beforeEach(() => clearDiscoveryCache());
+
+  it("expands ${VAR:-default} in compose using values from .env", async () => {
+    // .env has no fields the env-mapper recognises (so we skip layer 2 cleanly)
+    // but it supplies variables used to interpolate compose.
+    const envContent = "PG_HOST_PORT=6543\nDB_USER_VAR=alice\n";
+    const composeContent = `
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: \${DB_USER_VAR:-defaultuser}
+      POSTGRES_PASSWORD: \${DB_PASSWORD_VAR:-fallback}
+      POSTGRES_DB: appdb
+    ports:
+      - "\${PG_HOST_PORT:-5432}:5432"
+`;
+    const cfg = await resolveConnection({
+      engine: "postgres",
+      connectionName: "main",
+      cwd: "/tmp/no-such-project-interp",
+      store: nullStore,
+      portRegistry: nullPortRegistry,
+      envContent,
+      composeContent,
+    });
+    expect(cfg.source?.host).toBe("compose");
+    expect(cfg.port).toBe(6543);
+    expect(cfg.user).toBe("alice");
+    expect(cfg.password).toBe("fallback");
+    expect(cfg.database).toBe("appdb");
+  });
+
+  it("process.env wins over .env for interpolation (Compose precedence)", async () => {
+    const sentinel = "__db_registry_test_pg_host_port__";
+    process.env[sentinel] = "7777";
+    try {
+      const envContent = `${sentinel}=2222\n`;
+      const composeContent = `
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: u
+      POSTGRES_PASSWORD: p
+      POSTGRES_DB: d
+    ports:
+      - "\${${sentinel}:-5432}:5432"
+`;
+      const cfg = await resolveConnection({
+        engine: "postgres",
+        connectionName: "main",
+        cwd: "/tmp/no-such-project-procenv",
+        store: nullStore,
+        portRegistry: nullPortRegistry,
+        envContent,
+        composeContent,
+      });
+      expect(cfg.source?.host).toBe("compose");
+      expect(cfg.port).toBe(7777);
+    } finally {
+      delete process.env[sentinel];
+    }
+  });
+
+  it("falls through to next layer when compose has a missing required variable", async () => {
+    const composeContent = `
+services:
+  db:
+    image: postgres:16
+    environment:
+      POSTGRES_USER: \${MUST_BE_SET:?required}
+      POSTGRES_PASSWORD: p
+    ports:
+      - "5432:5432"
+`;
+    const cfg = await resolveConnection({
+      engine: "postgres",
+      connectionName: "main",
+      cwd: "/tmp/no-such-project-required",
+      store: nullStore,
+      portRegistry: nullPortRegistry,
+      composeContent,
+    });
+    // Compose layer collapses → falls through to defaults
+    expect(cfg.source?.host).toBe("default");
+  });
+});
+
 // ── source field populated ───────────────────────────────────────────────────
 
 describe("resolveConnection — source field", () => {
