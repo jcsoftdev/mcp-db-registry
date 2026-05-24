@@ -52,6 +52,7 @@ import { RedisDriver } from "./engines/redis.js";
 import { SqliteDriver } from "./engines/sqlite.js";
 import type { Engine } from "./types.js";
 import * as path from "node:path";
+import { mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 
 export { INSTRUCTIONS } from "./instructions.js";
@@ -165,6 +166,7 @@ export async function routeTool(
 
 async function main(): Promise<void> {
   const dataDir = getDataDir();
+  mkdirSync(dataDir, { recursive: true });
   const cwd = process.cwd();
   const project = resolveProjectId({ cwd, gitRemote: detectGitRemote() });
   const keyring = makeKeyring(process.platform);
