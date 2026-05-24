@@ -92,3 +92,33 @@ describe("creds tools — db_credentials_clear", () => {
     expect((result as { cleared: boolean }).cleared).toBe(true);
   });
 });
+
+describe("creds tools — error path coverage", () => {
+  test("db_credentials_save — store.save() throws returns isError", async () => {
+    const { db_credentials_save } = await importConnTools();
+    const credStore = {
+      ...makeCredStore(),
+      save: async () => { throw new Error("write failed"); },
+    };
+    const result = await db_credentials_save(
+      { engine: "postgres", dsn: "postgres://user:pass@host:5432/db" },
+      { project: PROJECT, credStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/credentials save failed/i);
+  });
+
+  test("db_credentials_clear — store.clear() throws returns isError", async () => {
+    const { db_credentials_clear } = await importConnTools();
+    const credStore = {
+      ...makeCredStore(),
+      clear: async () => { throw new Error("delete failed"); },
+    };
+    const result = await db_credentials_clear(
+      { engine: "postgres" },
+      { project: PROJECT, credStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/credentials clear failed/i);
+  });
+});

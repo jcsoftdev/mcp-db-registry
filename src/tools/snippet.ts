@@ -10,6 +10,7 @@ type StoreShape = {
     body: string;
     description?: string;
     tags?: string[];
+    category?: string;
     paramsSchema?: string;
   }): Promise<void>;
   get(key: { project: string; engine: Engine; name: string }): Promise<{
@@ -19,14 +20,16 @@ type StoreShape = {
     bodyKind: string;
     description: string | null;
     tags: string | null;
+    category: string | null;
     usesCount: number;
     lastUsedAt: number | null;
   } | null>;
-  list(opts: { project: string; engine?: Engine }): Promise<{
+  list(opts: { project: string; engine?: Engine; category?: string }): Promise<{
     name: string;
     engine: Engine;
     description: string | null;
     tags: string | null;
+    category: string | null;
     usesCount: number;
     lastUsedAt: number | null;
   }[]>;
@@ -36,6 +39,7 @@ type StoreShape = {
     engine: Engine;
     description: string | null;
     tags: string | null;
+    category: string | null;
     score: number;
   }[]>;
   incrementUsage(key: { project: string; engine: Engine; name: string }): Promise<void>;
@@ -57,6 +61,7 @@ export async function db_snippet_save(
     body: string;
     description?: string;
     tags?: string[];
+    category?: string;
     paramsSchema?: string;
   },
   deps: SnippetDeps
@@ -69,6 +74,7 @@ export async function db_snippet_save(
       body: args.body,
       description: args.description,
       tags: args.tags,
+      category: args.category,
       paramsSchema: args.paramsSchema,
     });
     return { saved: true };
@@ -179,13 +185,14 @@ export async function db_snippet_search(
 }
 
 export async function db_snippet_list(
-  args: { engine?: Engine; tags?: string[]; sort?: string },
+  args: { engine?: Engine; tags?: string[]; sort?: string; category?: string },
   deps: SnippetDeps
 ): Promise<unknown> {
   try {
     const items = await deps.snippetStore.list({
       project: deps.project,
       engine: args.engine,
+      category: args.category,
     });
     return {
       snippets: items.map((s) => ({
@@ -193,6 +200,7 @@ export async function db_snippet_list(
         engine: s.engine,
         description: s.description,
         tags: s.tags ? s.tags.split(",").filter(Boolean) : [],
+        category: s.category ?? null,
         usesCount: s.usesCount,
         lastUsedAt: s.lastUsedAt,
       })),

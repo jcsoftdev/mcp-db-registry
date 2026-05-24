@@ -262,3 +262,119 @@ describe("snippet tools — db_snippet_delete", () => {
     expect((result as { deleted: boolean }).deleted).toBe(true);
   });
 });
+
+describe("snippet tools — error path coverage", () => {
+  test("db_snippet_save — store.save() throws returns isError", async () => {
+    const { db_snippet_save } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      save: async () => { throw new Error("disk full"); },
+    };
+    const result = await db_snippet_save(
+      { engine: "postgres", name: "q", body: "SELECT 1" },
+      { project: PROJECT, snippetStore, queryRunner: undefined }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/save failed/i);
+  });
+
+  test("db_snippet_get — store.get() throws returns isError", async () => {
+    const { db_snippet_get } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      get: async () => { throw new Error("db error"); },
+    };
+    const result = await db_snippet_get(
+      { name: "q", engine: "postgres" },
+      { project: PROJECT, snippetStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/get failed/i);
+  });
+
+  test("db_snippet_run — store.get() throws returns isError", async () => {
+    const { db_snippet_run } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      get: async () => { throw new Error("db error"); },
+    };
+    const result = await db_snippet_run(
+      { name: "q", engine: "postgres" },
+      { project: PROJECT, snippetStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/run failed/i);
+  });
+
+  test("db_snippet_run — no queryRunner returns isError", async () => {
+    const { db_snippet_run } = await importSnippetTools();
+    const snippetStore = makeSnippetStore([
+      { name: "q", engine: "postgres", body: "SELECT 1" },
+    ]);
+    const result = await db_snippet_run(
+      { name: "q", engine: "postgres" },
+      { project: PROJECT, snippetStore, queryRunner: undefined }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/no query runner/i);
+  });
+
+  test("db_snippet_run — queryRunner throws returns isError", async () => {
+    const { db_snippet_run } = await importSnippetTools();
+    const snippetStore = makeSnippetStore([
+      { name: "q", engine: "postgres", body: "SELECT 1" },
+    ]);
+    const result = await db_snippet_run(
+      { name: "q", engine: "postgres" },
+      {
+        project: PROJECT,
+        snippetStore,
+        queryRunner: async () => { throw new Error("query failed"); },
+      }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/execution failed/i);
+  });
+
+  test("db_snippet_search — store.search() throws returns isError", async () => {
+    const { db_snippet_search } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      search: async () => { throw new Error("fts error"); },
+    };
+    const result = await db_snippet_search(
+      { query: "test" },
+      { project: PROJECT, snippetStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/search failed/i);
+  });
+
+  test("db_snippet_list — store.list() throws returns isError", async () => {
+    const { db_snippet_list } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      list: async () => { throw new Error("db error"); },
+    };
+    const result = await db_snippet_list(
+      { engine: "postgres" },
+      { project: PROJECT, snippetStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/list failed/i);
+  });
+
+  test("db_snippet_delete — store.delete() throws returns isError", async () => {
+    const { db_snippet_delete } = await importSnippetTools();
+    const snippetStore = {
+      ...makeSnippetStore(),
+      delete: async () => { throw new Error("db error"); },
+    };
+    const result = await db_snippet_delete(
+      { name: "q", engine: "postgres" },
+      { project: PROJECT, snippetStore }
+    );
+    expect((result as any).isError).toBe(true);
+    expect((result as any).content[0].text).toMatch(/delete failed/i);
+  });
+});

@@ -258,6 +258,18 @@ describe("db tools — db_query edge cases", () => {
     expect((result as { content: { text: string }[] }).content[0].text).toContain("Config resolution failed");
   });
 
+  test("returns ok:true when driver returns void result kind", async () => {
+    const { db_query } = await importTools();
+    const driver = makeDriver("redis", {
+      queryResult: { kind: "void" } as any,
+    });
+    const result = await db_query(
+      { engine: "redis", body: "SET key val" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg, allowWrite: true }
+    );
+    expect((result as { ok: boolean }).ok).toBe(true);
+  });
+
   test("query execution failure returns error envelope", async () => {
     const { db_query } = await importTools();
     const driver = {
@@ -338,5 +350,131 @@ describe("db tools — db_engines", () => {
     const my = r.engines.find((e) => e.name === "mysql")!;
     expect(pg.available).toBe(true);
     expect(my.available).toBe(false);
+  });
+});
+
+describe("db tools — error path coverage", () => {
+  test("db_list config resolution failure returns error", async () => {
+    const { db_list } = await importTools();
+    const result = await db_list(
+      { engine: "postgres" },
+      {
+        getDriver: (_e: Engine) => makeDriver("postgres"),
+        resolveConfig: async () => { throw new Error("no config"); },
+      }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/config resolution failed/i);
+  });
+
+  test("db_list connect failure returns error", async () => {
+    const { db_list } = await importTools();
+    const driver = makeDriver("postgres", { connectFails: true });
+    const result = await db_list(
+      { engine: "postgres" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/connection failed/i);
+  });
+
+  test("db_list list() failure returns error", async () => {
+    const { db_list } = await importTools();
+    const driver = {
+      ...makeDriver("postgres"),
+      list: async () => { throw new Error("list error"); },
+    };
+    const result = await db_list(
+      { engine: "postgres" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/list failed/i);
+  });
+
+  test("db_describe config resolution failure returns error", async () => {
+    const { db_describe } = await importTools();
+    const result = await db_describe(
+      { engine: "postgres", target: "users" },
+      {
+        getDriver: (_e: Engine) => makeDriver("postgres"),
+        resolveConfig: async () => { throw new Error("no config"); },
+      }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/config resolution failed/i);
+  });
+
+  test("db_describe connect failure returns error", async () => {
+    const { db_describe } = await importTools();
+    const driver = makeDriver("postgres", { connectFails: true });
+    const result = await db_describe(
+      { engine: "postgres", target: "users" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/connection failed/i);
+  });
+
+  test("db_describe describe() failure returns error", async () => {
+    const { db_describe } = await importTools();
+    const driver = {
+      ...makeDriver("postgres"),
+      describe: async () => { throw new Error("describe error"); },
+    };
+    const result = await db_describe(
+      { engine: "postgres", target: "users" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/describe failed/i);
+  });
+
+  test("db_explain config resolution failure returns error", async () => {
+    const { db_explain } = await importTools();
+    const result = await db_explain(
+      { engine: "postgres", body: "SELECT 1" },
+      {
+        getDriver: (_e: Engine) => makeDriver("postgres"),
+        resolveConfig: async () => { throw new Error("no config"); },
+      }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/config resolution failed/i);
+  });
+
+  test("db_explain connect failure returns error", async () => {
+    const { db_explain } = await importTools();
+    const driver = makeDriver("postgres", { connectFails: true });
+    const result = await db_explain(
+      { engine: "postgres", body: "SELECT 1" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/connection failed/i);
+  });
+
+  test("db_explain explain() failure returns error", async () => {
+    const { db_explain } = await importTools();
+    const driver = {
+      ...makeDriver("postgres"),
+      explain: async () => { throw new Error("explain error"); },
+    };
+    const result = await db_explain(
+      { engine: "postgres", body: "SELECT 1" },
+      { getDriver: (_e: Engine) => driver, resolveConfig: async (_e: Engine, _c: string) => driver.cfg }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/explain failed/i);
+  });
+
+  test("db_connection_info config resolution failure returns error", async () => {
+    const { db_connection_info } = await importTools();
+    const result = await db_connection_info(
+      { engine: "postgres" },
+      { resolveConfig: async () => { throw new Error("no config"); } }
+    );
+    expect((result as { isError: boolean }).isError).toBe(true);
+    expect((result as { content: { text: string }[] }).content[0].text).toMatch(/config resolution failed/i);
   });
 });
