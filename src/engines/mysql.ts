@@ -1,5 +1,5 @@
 import mysql from "mysql2/promise";
-import type { Connection, EngineDriver, QueryResult, ResolvedConfig, Row } from "../types.js";
+import type { Connection, EngineDriver, ForeignKey, QueryResult, ResolvedConfig, Row } from "../types.js";
 
 const ROW_LIMIT = 500;
 
@@ -71,5 +71,27 @@ export class MysqlDriver implements EngineDriver<"mysql"> {
     const [rows] = await c.execute(`EXPLAIN ${body}`);
     const r = rows as Row[];
     return { kind: "rows", rows: r, truncated: false, rowCount: r.length };
+  }
+
+  async getForeignKeys(conn: Connection<"mysql">, tables: string[]): Promise<ForeignKey[]> {
+    if (tables.length === 0) return [];
+    const c = conn.native as MysqlConnection;
+    const [rows] = await c.execute(
+      `SELECT
+         kcu.TABLE_NAME             AS from_table,
+         kcu.COLUMN_NAME            AS from_col,
+         kcu.REFERENCED_TABLE_NAME  AS to_table,
+         kcu.REFERENCED_COLUMN_NAME AS to_col
+       FROM information_schema.KEY_COLUMN_USAGE AS kcu
+       JOIN information_schema.REFERENTIAL_CONSTRAINTS AS rc
+         ON rc.CONSTRAINT_NAME    = kcu.CONSTRAINT_NAME
+         AND rc.CONSTRAINT_SCHEMA = kcu.TABLE_SCHEMA
+       WHERE kcu.TABLE_SCHEMA          = DATABASE()
+         AND kcu.REFERENCED_TABLE_NAME IS NOT NULL
+         AND kcu.TABLE_NAME IN (?)
+       ORDER BY kcu.TABLE_NAME, kcu.COLUMN_NAME`,
+      [tables]
+    );
+    return rows as ForeignKey[];
   }
 }

@@ -30,6 +30,7 @@ export interface EngineDriver<E extends Engine = Engine> {
   list(conn: Connection<E>, kind: "tables" | "collections" | "keys" | "indexes"): Promise<string[]>;
   describe(conn: Connection<E>, target: string): Promise<Row[]>;
   explain(conn: Connection<E>, body: string): Promise<QueryResult>;
+  getForeignKeys(conn: Connection<E>, tables: string[]): Promise<ForeignKey[]>;
 }
 
 export type Connection<E extends Engine> = { engine: E; native: unknown };
@@ -62,6 +63,7 @@ export interface Snippet {
   name: string;
   description: string | null;
   tags: string | null;
+  category?: string | null;
   paramsSchema: string | null;
   bodyKind: "sql" | "mongo-op" | "redis-cmd";
   body: Uint8Array;
@@ -95,5 +97,65 @@ export const snippetSaveInputSchema = {
     paramsSchema: { type: "object", description: "Optional JSONSchema for the body's params." },
     body: { type: "string" },
     bodyKind: { enum: ["sql", "mongo-op", "redis-cmd"] as const },
+    category: { type: "string", maxLength: 80, description: "Optional grouping label. Indexed in FTS5." },
   },
 } as const;
+
+export interface ForeignKey {
+  from_table: string;
+  from_col: string;
+  to_table: string;
+  to_col: string;
+}
+
+export interface JoinEdge {
+  from: string;
+  from_col: string;
+  to: string;
+  to_col: string;
+}
+
+export type ReportMergeMode = "object" | "union" | "join";
+
+export type ColumnInfo = Record<string, unknown>;
+
+export interface TableDescribe {
+  table: string;
+  columns: ColumnInfo[];
+}
+
+export interface DescribeManyResult {
+  tables: TableDescribe[];
+  missing: string[];
+  errors: { table: string; message: string }[];
+}
+
+export interface SuggestQueryResult {
+  sql: string;
+  tables: string[];
+  join_path: JoinEdge[];
+  warnings: string[];
+}
+
+export interface SnippetRunOutcome {
+  snippet_name: string;
+  rows: Row[];
+  kind: QueryResult["kind"];
+  raw?: QueryResult;
+  error?: string;
+}
+
+export interface SnippetRunError {
+  snippet_name: string;
+  message: string;
+}
+
+export interface JoinOnSpec {
+  snippet_name: string;
+  column: string;
+}
+
+export type ReportRunResult =
+  | { mode: "object"; results: Record<string, unknown>; errors: SnippetRunError[] }
+  | { mode: "union"; rows: Row[]; columns: string[]; _truncated: boolean; _total_rows: number; errors: SnippetRunError[] }
+  | { mode: "join"; rows: Row[]; columns: string[]; _truncated: boolean; _total_rows: number; errors: SnippetRunError[] };

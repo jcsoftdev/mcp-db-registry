@@ -1,5 +1,5 @@
 import Redis from "ioredis";
-import type { Connection, EngineDriver, QueryResult, ResolvedConfig, Row } from "../types.js";
+import type { Connection, EngineDriver, ForeignKey, QueryResult, ResolvedConfig, Row } from "../types.js";
 
 type RedisClient = InstanceType<typeof Redis>;
 
@@ -41,6 +41,10 @@ export class RedisDriver implements EngineDriver<"redis"> {
     const client = conn.native as RedisClient;
     const [type, ttl] = await Promise.all([client.type(target), client.ttl(target)]);
     return [{ key: target, type, ttl }];
+  }
+
+  async getForeignKeys(_conn: Connection<"redis">, _tables: string[]): Promise<ForeignKey[]> {
+    return [];
   }
 
   async explain(conn: Connection<"redis">, _body: string): Promise<QueryResult> {

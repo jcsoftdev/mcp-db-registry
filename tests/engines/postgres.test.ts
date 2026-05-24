@@ -213,3 +213,49 @@ describe("PostgresDriver — close", () => {
     expect((mockSql as any).end.mock.calls.length).toBe(1);
   });
 });
+
+describe("PostgresDriver — getForeignKeys", () => {
+  it("calls information_schema query with tables array and returns decoded FK edges", async () => {
+    const fkRows = [
+      { from_table: "orders", from_col: "user_id", to_table: "users", to_col: "id" },
+      { from_table: "line_items", from_col: "order_id", to_table: "orders", to_col: "id" },
+    ];
+    (mockSql as any).unsafe.mockReset();
+    (mockSql as any).unsafe.mockResolvedValue(fkRows);
+
+    const driver = new PostgresDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["orders", "line_items"]);
+
+    expect(fks).toEqual(fkRows);
+    const callArgs = (mockSql as any).unsafe.mock.calls[0];
+    const sql = callArgs[0] as string;
+    const params = callArgs[1] as unknown[];
+    expect(sql).toContain("information_schema");
+    expect(sql).toContain("FOREIGN KEY");
+    expect(sql).toContain("ANY($1)");
+    expect(params).toEqual([["orders", "line_items"]]);
+  });
+
+  it("returns empty array without querying when tables is empty", async () => {
+    (mockSql as any).unsafe.mockReset();
+
+    const driver = new PostgresDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, []);
+
+    expect(fks).toEqual([]);
+    expect((mockSql as any).unsafe.mock.calls.length).toBe(0);
+  });
+
+  it("returns empty array when no FK constraints match", async () => {
+    (mockSql as any).unsafe.mockReset();
+    (mockSql as any).unsafe.mockResolvedValue([]);
+
+    const driver = new PostgresDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["standalone_table"]);
+
+    expect(fks).toEqual([]);
+  });
+});

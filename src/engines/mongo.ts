@@ -1,5 +1,5 @@
 import { MongoClient } from "mongodb";
-import type { Connection, EngineDriver, QueryResult, ResolvedConfig, Row } from "../types.js";
+import type { Connection, EngineDriver, ForeignKey, QueryResult, ResolvedConfig, Row } from "../types.js";
 
 const DOC_LIMIT = 500;
 
@@ -119,6 +119,10 @@ export class MongoDriver implements EngineDriver<"mongo"> {
     }));
 
     return [...fields, ...indexes];
+  }
+
+  async getForeignKeys(_conn: Connection<"mongo">, _tables: string[]): Promise<ForeignKey[]> {
+    return [];
   }
 
   async explain(conn: Connection<"mongo">, body: string): Promise<QueryResult> {

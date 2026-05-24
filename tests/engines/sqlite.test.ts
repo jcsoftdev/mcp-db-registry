@@ -155,3 +155,69 @@ describe("SqliteDriver — close", () => {
     await expect(driver.close(conn)).resolves.toBeUndefined();
   });
 });
+
+describe("SqliteDriver — getForeignKeys", () => {
+  it("returns FK edges via PRAGMA foreign_key_list for a table with one FK", async () => {
+    const driver = new SqliteDriver();
+    const conn = await driver.connect(cfg);
+    const db = conn.native as import("bun:sqlite").Database;
+
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY)");
+    db.exec("CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id))");
+
+    const fks = await driver.getForeignKeys(conn, ["orders"]);
+
+    expect(fks.length).toBe(1);
+    expect(fks[0]).toEqual({
+      from_table: "orders",
+      from_col: "user_id",
+      to_table: "users",
+      to_col: "id",
+    });
+    await driver.close(conn);
+  });
+
+  it("returns FK edges for multiple tables in one call", async () => {
+    const driver = new SqliteDriver();
+    const conn = await driver.connect(cfg);
+    const db = conn.native as import("bun:sqlite").Database;
+
+    db.exec("PRAGMA foreign_keys = ON");
+    db.exec("CREATE TABLE users (id INTEGER PRIMARY KEY)");
+    db.exec("CREATE TABLE orders (id INTEGER PRIMARY KEY, user_id INTEGER REFERENCES users(id))");
+    db.exec("CREATE TABLE line_items (id INTEGER PRIMARY KEY, order_id INTEGER REFERENCES orders(id))");
+
+    const fks = await driver.getForeignKeys(conn, ["orders", "line_items"]);
+
+    expect(fks.length).toBe(2);
+    const ordersFk = fks.find((f) => f.from_table === "orders");
+    const itemsFk = fks.find((f) => f.from_table === "line_items");
+    expect(ordersFk).toEqual({ from_table: "orders", from_col: "user_id", to_table: "users", to_col: "id" });
+    expect(itemsFk).toEqual({ from_table: "line_items", from_col: "order_id", to_table: "orders", to_col: "id" });
+    await driver.close(conn);
+  });
+
+  it("returns empty array when the table has no FKs", async () => {
+    const driver = new SqliteDriver();
+    const conn = await driver.connect(cfg);
+    const db = conn.native as import("bun:sqlite").Database;
+
+    db.exec("CREATE TABLE standalone (id INTEGER PRIMARY KEY, name TEXT)");
+
+    const fks = await driver.getForeignKeys(conn, ["standalone"]);
+
+    expect(fks).toEqual([]);
+    await driver.close(conn);
+  });
+
+  it("returns empty array when tables array is empty", async () => {
+    const driver = new SqliteDriver();
+    const conn = await driver.connect(cfg);
+
+    const fks = await driver.getForeignKeys(conn, []);
+
+    expect(fks).toEqual([]);
+    await driver.close(conn);
+  });
+});

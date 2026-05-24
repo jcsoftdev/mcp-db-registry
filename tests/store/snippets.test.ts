@@ -127,6 +127,40 @@ describe("SnippetsStore", () => {
     expect(raw).not.toContain("SELECT");
   });
 
+  // Phase 2 — category CRUD (REQ-31)
+
+  it("2.1 save snippet with category; get returns it", async () => {
+    await store.save({ ...BASE, name: "revenue-report", category: "analytics" });
+    const s = await store.get({ project: BASE.project, engine: BASE.engine, name: "revenue-report" });
+    expect(s).not.toBeNull();
+    expect(s!.category).toBe("analytics");
+  });
+
+  it("2.2 legacy snippet without category returns category=null", async () => {
+    await store.save(BASE);
+    const s = await store.get({ project: BASE.project, engine: BASE.engine, name: BASE.name });
+    expect(s).not.toBeNull();
+    expect(s!.category).toBeNull();
+  });
+
+  it("2.3 list({category:'analytics'}) returns only matching snippets", async () => {
+    await store.save({ ...BASE, name: "rev", category: "analytics" });
+    await store.save({ ...BASE, name: "ops-check", category: "ops" });
+    await store.save({ ...BASE, name: "no-cat" });
+    const list = await store.list({ project: BASE.project, category: "analytics" });
+    expect(list.map((s) => s.name)).toContain("rev");
+    expect(list.map((s) => s.name)).not.toContain("ops-check");
+    expect(list.map((s) => s.name)).not.toContain("no-cat");
+  });
+
+  it("2.4 search('audit') matches snippet with category='audit' via FTS5", async () => {
+    await store.save({ ...BASE, name: "login-events", category: "audit", description: "login tracking" });
+    const results = await store.search({ query: "audit" });
+    expect(results.map((r) => r.name)).toContain("login-events");
+    const hit = results.find((r) => r.name === "login-events");
+    expect(hit!.category).toBe("audit");
+  });
+
   it("1000-row FTS5 search benchmark — under 5ms p99", async () => {
     const inserts: Promise<void>[] = [];
     for (let i = 0; i < 1000; i++) {

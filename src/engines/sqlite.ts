@@ -1,5 +1,5 @@
 import { Database } from "bun:sqlite";
-import type { Connection, EngineDriver, QueryResult, ResolvedConfig, Row } from "../types.js";
+import type { Connection, EngineDriver, ForeignKey, QueryResult, ResolvedConfig, Row } from "../types.js";
 
 const ROW_LIMIT = 500;
 
@@ -65,5 +65,23 @@ export class SqliteDriver implements EngineDriver<"sqlite"> {
     const db = conn.native as Database;
     const rows = db.query(`EXPLAIN QUERY PLAN ${body}`).all() as Row[];
     return { kind: "rows", rows, truncated: false, rowCount: rows.length };
+  }
+
+  async getForeignKeys(conn: Connection<"sqlite">, tables: string[]): Promise<ForeignKey[]> {
+    if (tables.length === 0) return [];
+    const db = conn.native as Database;
+    const out: ForeignKey[] = [];
+    for (const table of tables) {
+      const safe = table.replace(/"/g, '""');
+      const rows = db.query(`PRAGMA foreign_key_list("${safe}")`).all() as Array<{
+        table: string;
+        from: string;
+        to: string;
+      }>;
+      for (const r of rows) {
+        out.push({ from_table: table, from_col: r.from, to_table: r.table, to_col: r.to });
+      }
+    }
+    return out;
   }
 }

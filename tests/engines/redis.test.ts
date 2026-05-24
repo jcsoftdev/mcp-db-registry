@@ -215,6 +215,30 @@ describe("RedisDriver — ping", () => {
   });
 });
 
+describe("RedisDriver — getForeignKeys", () => {
+  it("returns empty array without error (no FK concept in redis)", async () => {
+    MockRedis.mockReset();
+    MockRedis.mockImplementation(() => mockRedisInstance);
+
+    const driver = new RedisDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["sessions"]);
+
+    expect(fks).toEqual([]);
+  });
+
+  it("returns empty array even when tables is empty", async () => {
+    MockRedis.mockReset();
+    MockRedis.mockImplementation(() => mockRedisInstance);
+
+    const driver = new RedisDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, []);
+
+    expect(fks).toEqual([]);
+  });
+});
+
 describe("RedisDriver — close", () => {
   it("calls disconnect() to release the connection", async () => {
     mockDisconnect.mockReset();

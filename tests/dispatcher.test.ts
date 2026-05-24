@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "bun:test";
 import type { Connection, Engine, EngineDriver, QueryResult, ResolvedConfig, Row } from "../src/types.js";
-import { createDispatcher, closeAllConnections, releaseAllConnections } from "../src/dispatcher.js";
+import { createDispatcher, closeAllConnections, releaseAllConnections, createDriver } from "../src/dispatcher.js";
 
 // Build a fresh mock driver for each engine to inject into the dispatcher
 function makeMockDriver(engine: Engine): EngineDriver & { _connectCount: number; _closedConns: Connection<Engine>[] } {
@@ -166,5 +166,16 @@ describe("dispatcher — module-level closeAllConnections / releaseAllConnection
     releaseAllConnections();
     // Just verify it doesn't throw
     expect(true).toBe(true);
+  });
+});
+
+describe("dispatcher — createDriver", () => {
+  it("creates a driver instance for each supported engine", () => {
+    const engines: Engine[] = ["postgres", "mysql", "mongo", "redis", "sqlite"];
+    for (const engine of engines) {
+      const driver = createDriver(engine);
+      expect(driver).toBeDefined();
+      expect(driver.engine).toBe(engine);
+    }
   });
 });

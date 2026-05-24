@@ -187,3 +187,48 @@ describe("MysqlDriver — close", () => {
     expect(mockEnd.mock.calls.length).toBe(1);
   });
 });
+
+describe("MysqlDriver — getForeignKeys", () => {
+  it("calls information_schema.KEY_COLUMN_USAGE with IN(?) and returns FK edges", async () => {
+    const fkRows = [
+      { from_table: "invoices", from_col: "customer_id", to_table: "customers", to_col: "id" },
+    ];
+    mockExecute.mockReset();
+    mockExecute.mockResolvedValue([fkRows, []]);
+
+    const driver = new MysqlDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["invoices"]);
+
+    expect(fks).toEqual(fkRows);
+    const callArgs = mockExecute.mock.calls[0];
+    const sql = callArgs[0] as string;
+    const params = callArgs[1] as unknown[];
+    expect(sql).toContain("KEY_COLUMN_USAGE");
+    expect(sql).toContain("REFERENCED_TABLE_NAME");
+    expect(sql).toContain("IN (?)");
+    expect(params).toEqual([["invoices"]]);
+  });
+
+  it("returns empty array without querying when tables is empty", async () => {
+    mockExecute.mockReset();
+
+    const driver = new MysqlDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, []);
+
+    expect(fks).toEqual([]);
+    expect(mockExecute.mock.calls.length).toBe(0);
+  });
+
+  it("returns empty array when no FK constraints match", async () => {
+    mockExecute.mockReset();
+    mockExecute.mockResolvedValue([[], []]);
+
+    const driver = new MysqlDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["standalone_table"]);
+
+    expect(fks).toEqual([]);
+  });
+});

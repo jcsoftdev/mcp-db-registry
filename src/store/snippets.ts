@@ -14,6 +14,7 @@ export interface SaveSnippetOpts {
   description?: string;
   tags?: string[];
   paramsSchema?: string;
+  category?: string;
 }
 
 export interface SnippetKey {
@@ -27,6 +28,7 @@ export interface SnippetMeta {
   engine: Engine;
   description: string | null;
   tags: string | null;
+  category: string | null;
   usesCount: number;
   lastUsedAt: number | null;
 }
@@ -34,6 +36,7 @@ export interface SnippetMeta {
 export interface SnippetFull extends SnippetMeta {
   body: string;
   bodyKind: string;
+  category: string | null;
 }
 
 export interface SearchResult {
@@ -41,6 +44,7 @@ export interface SearchResult {
   engine: Engine;
   description: string | null;
   tags: string | null;
+  category: string | null;
   score: number;
 }
 
@@ -50,6 +54,7 @@ type SnippetRow = {
   engine: string;
   description: string | null;
   tags: string | null;
+  category: string | null;
   body_kind: string;
   body: Uint8Array;
   body_nonce: Uint8Array;
@@ -65,15 +70,17 @@ export class SnippetsStore {
     const now = Date.now();
     const tagsStr = opts.tags ? opts.tags.map((t) => t.toLowerCase()).join(",") : null;
     const bodyKind = opts.bodyKind ?? "sql";
+    const category = opts.category ?? null;
 
     this.db.query(`
       INSERT INTO snippets
-        (project, engine, name, description, tags, params_schema, body_kind, body, body_nonce, uses_count, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+        (project, engine, name, description, tags, category, params_schema, body_kind, body, body_nonce, uses_count, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
       ON CONFLICT (project, engine, name)
       DO UPDATE SET
         description = excluded.description,
         tags = excluded.tags,
+        category = excluded.category,
         params_schema = excluded.params_schema,
         body_kind = excluded.body_kind,
         body = excluded.body,
@@ -81,14 +88,14 @@ export class SnippetsStore {
         updated_at = excluded.updated_at
     `).run(
       opts.project, opts.engine, opts.name,
-      opts.description ?? null, tagsStr, opts.paramsSchema ?? null,
+      opts.description ?? null, tagsStr, category, opts.paramsSchema ?? null,
       bodyKind, ciphertext, nonce, now, now
     );
   }
 
   async get(key: SnippetKey): Promise<SnippetFull | null> {
     const row = this.db.query<SnippetRow, [string, string, string]>(
-      `SELECT id, name, engine, description, tags, body_kind, body, body_nonce, uses_count, last_used_at
+      `SELECT id, name, engine, description, tags, category, body_kind, body, body_nonce, uses_count, last_used_at
        FROM snippets WHERE project = ? AND engine = ? AND name = ?`
     ).get(key.project, key.engine, key.name);
 
@@ -96,16 +103,26 @@ export class SnippetsStore {
     return this.toFull(row);
   }
 
-  async list(opts: { project: string; engine?: Engine }): Promise<SnippetMeta[]> {
+  async list(opts: { project: string; engine?: Engine; category?: string }): Promise<SnippetMeta[]> {
     let rows: SnippetRow[];
-    if (opts.engine) {
+    if (opts.engine && opts.category != null) {
+      rows = this.db.query<SnippetRow, [string, string, string]>(
+        `SELECT id, name, engine, description, tags, category, body_kind, body, body_nonce, uses_count, last_used_at
+         FROM snippets WHERE project = ? AND engine = ? AND category = ? ORDER BY name`
+      ).all(opts.project, opts.engine, opts.category);
+    } else if (opts.engine) {
       rows = this.db.query<SnippetRow, [string, string]>(
-        `SELECT id, name, engine, description, tags, body_kind, body, body_nonce, uses_count, last_used_at
+        `SELECT id, name, engine, description, tags, category, body_kind, body, body_nonce, uses_count, last_used_at
          FROM snippets WHERE project = ? AND engine = ? ORDER BY name`
       ).all(opts.project, opts.engine);
+    } else if (opts.category != null) {
+      rows = this.db.query<SnippetRow, [string, string]>(
+        `SELECT id, name, engine, description, tags, category, body_kind, body, body_nonce, uses_count, last_used_at
+         FROM snippets WHERE project = ? AND category = ? ORDER BY engine, name`
+      ).all(opts.project, opts.category);
     } else {
       rows = this.db.query<SnippetRow, [string]>(
-        `SELECT id, name, engine, description, tags, body_kind, body, body_nonce, uses_count, last_used_at
+        `SELECT id, name, engine, description, tags, category, body_kind, body, body_nonce, uses_count, last_used_at
          FROM snippets WHERE project = ? ORDER BY engine, name`
       ).all(opts.project);
     }
@@ -115,6 +132,7 @@ export class SnippetsStore {
       engine: r.engine as Engine,
       description: r.description,
       tags: r.tags,
+      category: r.category,
       usesCount: r.uses_count,
       lastUsedAt: r.last_used_at,
     }));
@@ -129,10 +147,10 @@ export class SnippetsStore {
   async search(opts: { query: string }): Promise<SearchResult[]> {
     const sanitized = opts.query.trim().split(/\s+/).map((t) => `"${t}"`).join(" ");
 
-    type FtsRow = { rowid: number; name: string; engine: string; description: string | null; tags: string | null; rank: number };
+    type FtsRow = { rowid: number; name: string; engine: string; description: string | null; tags: string | null; category: string | null; rank: number };
 
     const rows = this.db.query<FtsRow, [string]>(
-      `SELECT s.rowid, s.name, s.engine, s.description, s.tags, f.rank
+      `SELECT s.rowid, s.name, s.engine, s.description, s.tags, s.category, f.rank
        FROM snippets_fts f
        JOIN snippets s ON s.id = f.rowid
        WHERE snippets_fts MATCH ?
@@ -144,6 +162,7 @@ export class SnippetsStore {
       engine: r.engine as Engine,
       description: r.description,
       tags: r.tags,
+      category: r.category,
       score: r.rank,
     }));
   }
@@ -163,6 +182,7 @@ export class SnippetsStore {
       engine: row.engine as Engine,
       description: row.description,
       tags: row.tags,
+      category: row.category,
       bodyKind: row.body_kind,
       body: dec.decode(plaintext),
       usesCount: row.uses_count,

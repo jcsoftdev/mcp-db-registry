@@ -22,6 +22,7 @@ CREATE TABLE IF NOT EXISTS snippets (
   name          TEXT    NOT NULL,
   description   TEXT,
   tags          TEXT,
+  category      TEXT,
   params_schema TEXT,
   body_kind     TEXT    NOT NULL CHECK (body_kind IN ('sql','mongo-op','redis-cmd')),
   body          BLOB    NOT NULL,
@@ -35,26 +36,26 @@ CREATE TABLE IF NOT EXISTS snippets (
 CREATE INDEX IF NOT EXISTS idx_snippets_project_engine ON snippets(project, engine);
 
 CREATE VIRTUAL TABLE IF NOT EXISTS snippets_fts USING fts5(
-  name, description, tags,
+  name, description, tags, category,
   content='snippets', content_rowid='id'
 );
 
 CREATE TRIGGER IF NOT EXISTS snippets_ai AFTER INSERT ON snippets BEGIN
-  INSERT INTO snippets_fts(rowid, name, description, tags)
-  VALUES (new.id, new.name, new.description, new.tags);
+  INSERT INTO snippets_fts(rowid, name, description, tags, category)
+  VALUES (new.id, new.name, new.description, new.tags, new.category);
 END;
 
 CREATE TRIGGER IF NOT EXISTS snippets_ad AFTER DELETE ON snippets BEGIN
-  INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags)
-  VALUES('delete', old.id, old.name, old.description, old.tags);
+  INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags, category)
+  VALUES('delete', old.id, old.name, old.description, old.tags, old.category);
 END;
 
 CREATE TRIGGER IF NOT EXISTS snippets_au AFTER UPDATE ON snippets BEGIN
-  INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags)
-  VALUES('delete', old.id, old.name, old.description, old.tags);
-  INSERT INTO snippets_fts(rowid, name, description, tags)
-  VALUES (new.id, new.name, new.description, new.tags);
+  INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags, category)
+  VALUES('delete', old.id, old.name, old.description, old.tags, old.category);
+  INSERT INTO snippets_fts(rowid, name, description, tags, category)
+  VALUES (new.id, new.name, new.description, new.tags, new.category);
 END;
 
 CREATE TABLE IF NOT EXISTS meta (key TEXT PRIMARY KEY, value TEXT NOT NULL);
-INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '1');
+INSERT OR IGNORE INTO meta(key, value) VALUES ('schema_version', '2');

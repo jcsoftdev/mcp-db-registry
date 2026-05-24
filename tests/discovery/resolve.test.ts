@@ -128,6 +128,25 @@ describe("resolveConnection — cache", () => {
     // Port registry called only once — cache hit on second
     expect(callCount).toBe(1);
   });
+
+  it("test-mode cache: injected content hits cache on second identical call", async () => {
+    // When envContent is injected (test mode), the cache returns early on subsequent calls with same key
+    const opts = {
+      engine: "postgres" as Engine,
+      connectionName: "main",
+      cwd: "/injected-cache-test",
+      store: nullStore,
+      portRegistry: nullPortRegistry,
+      envContent: "POSTGRES_URL=postgres://user:pw@host:5432/db\n",
+    };
+
+    const first = await resolveConnection(opts);
+    // Second call with same opts — should return cached value (exercises line 88 branch)
+    const second = await resolveConnection(opts);
+
+    expect(first.url).toBe(second.url);
+    expect(first.source?.host).toBe("env");
+  });
 });
 
 // ── source field populated ───────────────────────────────────────────────────

@@ -272,6 +272,36 @@ describe("MongoDriver — ping", () => {
   });
 });
 
+describe("MongoDriver — getForeignKeys", () => {
+  it("returns empty array without error (no FK concept in mongo)", async () => {
+    MockMongoClient.mockReset();
+    const clientInstance = { connect: mockConnect, db: mockDbFn, close: mockClose };
+    MockMongoClient.mockImplementation(() => clientInstance);
+    mockConnect.mockReset();
+    mockConnect.mockResolvedValue(undefined);
+
+    const driver = new MongoDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, ["orders"]);
+
+    expect(fks).toEqual([]);
+  });
+
+  it("returns empty array even when tables is empty", async () => {
+    MockMongoClient.mockReset();
+    const clientInstance = { connect: mockConnect, db: mockDbFn, close: mockClose };
+    MockMongoClient.mockImplementation(() => clientInstance);
+    mockConnect.mockReset();
+    mockConnect.mockResolvedValue(undefined);
+
+    const driver = new MongoDriver();
+    const conn = await driver.connect(cfg);
+    const fks = await driver.getForeignKeys(conn, []);
+
+    expect(fks).toEqual([]);
+  });
+});
+
 describe("MongoDriver — close", () => {
   it("calls client.close()", async () => {
     mockClose.mockReset();

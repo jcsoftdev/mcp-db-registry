@@ -20,7 +20,62 @@ export function openDb(path: string): Database {
   const schema = readFileSync(join(__dir, "schema.sql"), "utf8");
   db.exec(schema);
 
+  runMigrations(db);
+
   return db;
+}
+
+export function runMigrations(db: Database): void {
+  const row = db.query("SELECT value FROM meta WHERE key='schema_version'").get() as { value: string } | undefined;
+  const current = row?.value ?? "1";
+
+  if (current === "1") migrateV1ToV2(db);
+}
+
+function migrateV1ToV2(db: Database): void {
+  db.transaction(() => {
+    try {
+      db.exec("ALTER TABLE snippets ADD COLUMN category TEXT");
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : String(err);
+      if (!/duplicate column name/i.test(msg)) throw err;
+    }
+
+    db.exec(`
+      DROP TRIGGER IF EXISTS snippets_ai;
+      DROP TRIGGER IF EXISTS snippets_au;
+      DROP TRIGGER IF EXISTS snippets_ad;
+    `);
+
+    db.exec("DROP TABLE IF EXISTS snippets_fts");
+    db.exec(`
+      CREATE VIRTUAL TABLE snippets_fts USING fts5(
+        name, description, tags, category,
+        content='snippets', content_rowid='id'
+      )
+    `);
+
+    db.exec(`
+      CREATE TRIGGER snippets_ai AFTER INSERT ON snippets BEGIN
+        INSERT INTO snippets_fts(rowid, name, description, tags, category)
+        VALUES (new.id, new.name, new.description, new.tags, new.category);
+      END;
+      CREATE TRIGGER snippets_ad AFTER DELETE ON snippets BEGIN
+        INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags, category)
+        VALUES('delete', old.id, old.name, old.description, old.tags, old.category);
+      END;
+      CREATE TRIGGER snippets_au AFTER UPDATE ON snippets BEGIN
+        INSERT INTO snippets_fts(snippets_fts, rowid, name, description, tags, category)
+        VALUES('delete', old.id, old.name, old.description, old.tags, old.category);
+        INSERT INTO snippets_fts(rowid, name, description, tags, category)
+        VALUES (new.id, new.name, new.description, new.tags, new.category);
+      END;
+    `);
+
+    db.exec("INSERT INTO snippets_fts(snippets_fts) VALUES('rebuild')");
+
+    db.exec("UPDATE meta SET value='2' WHERE key='schema_version'");
+  })();
 }
 
 export function closeDb(db: Database): void {
