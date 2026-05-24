@@ -140,9 +140,69 @@ Remove a saved credential.
 { "engine": "postgres", "name": "main" }
 ```
 
+### `db_describe_many`
+
+Describe multiple tables in a single call. Returns schemas keyed by table name; tables not found are reported in `missing[]`. For mongo, a `warnings[]` field is included indicating that introspection falls back to sampling.
+
+```json
+{
+  "engine": "postgres",
+  "tables": ["users", "orders", "products"],
+  "connection": "main"
+}
+```
+
+Returns `{ schemas: { tableName: ColumnInfo[] }, missing: [tableName] }` — key insertion order in `schemas` matches the input `tables` array order.
+
+### `db_suggest_query`
+
+Build a FK-aware SQL skeleton that joins the requested tables. Does **not** execute the query. Disconnected tables (no FK path) are reported in `warnings[]` — no silent cartesian products.
+
+```json
+{
+  "engine": "postgres",
+  "intent": "list recent orders with customer details",
+  "tables": ["orders", "users"],
+  "connection": "main"
+}
+```
+
+Returns `{ sql, tables, join_path: [{ from, from_col, to, to_col }], warnings }`. The generated SQL includes a `-- intent: <text>` comment and a `LIMIT 100` guard.
+
+### `db_report_run`
+
+Run multiple saved snippets sequentially and merge their results. Per-snippet write-guard is enforced before each execution. Merged result is capped at 1000 rows.
+
+```json
+{
+  "engine": "postgres",
+  "snippet_names": ["active-users", "recent-orders"],
+  "merge": "object"
+}
+```
+
+**Merge modes:**
+- `object` (default) — result keyed by snippet name: `{ "active-users": [...rows], "recent-orders": [...rows] }`
+- `union` — all rows unioned into a flat array; missing columns filled with `null`; `_source` column added
+- `join` — inner-join across snippets on an explicit key; requires `join_on: [{ snippet_name, column }]`
+
+```json
+{
+  "engine": "sqlite",
+  "snippet_names": ["users-list", "orders-summary"],
+  "merge": "join",
+  "join_on": [
+    { "snippet_name": "users-list", "column": "user_id" },
+    { "snippet_name": "orders-summary", "column": "user_id" }
+  ]
+}
+```
+
+Returns `{ mode, result|rows, errors, _truncated, _total_rows }`.
+
 ### `db_snippet_save`
 
-Save a reusable query snippet (body encrypted at rest).
+Save a reusable query snippet (body encrypted at rest). The optional `category` field groups snippets for filtering and is indexed for full-text search.
 
 ```json
 {
@@ -150,7 +210,8 @@ Save a reusable query snippet (body encrypted at rest).
   "name": "active-users",
   "body": "SELECT id, email FROM users WHERE active = true",
   "description": "List all active users",
-  "tags": ["users", "reporting"]
+  "tags": ["users", "reporting"],
+  "category": "analytics"
 }
 ```
 
@@ -180,10 +241,10 @@ Full-text search snippets by name, description, or tags.
 
 ### `db_snippet_list`
 
-List snippets (no bodies). Optionally filter by engine.
+List snippets (no bodies). Optionally filter by engine or `category` (exact match).
 
 ```json
-{ "engine": "postgres" }
+{ "engine": "postgres", "category": "analytics" }
 ```
 
 ### `db_snippet_delete`
@@ -200,19 +261,63 @@ Delete a saved snippet.
 
 ```
 1. Save a snippet once:
-   db_snippet_save { engine, name, body, description?, tags? }
+   db_snippet_save { engine, name, body, description?, tags?, category? }
 
 2. Later, run it by name — no need to retype the SQL:
    db_snippet_run { name, engine }
 
-3. Find snippets by keyword:
+3. Find snippets by keyword (name, description, tags, or category):
    db_snippet_search { query: "active users" }
 
-4. Inspect the body:
+4. List snippets filtered by category:
+   db_snippet_list { engine, category: "analytics" }
+
+5. Inspect the body:
    db_snippet_get { name, engine }
 ```
 
-Snippet bodies are encrypted with the same master key as credentials. FTS5 indexes `name`, `description`, and `tags` fields for fast search. The `usesCount` field increments atomically on each `db_snippet_run` call.
+Snippet bodies are encrypted with the same master key as credentials. FTS5 indexes `name`, `description`, `tags`, and `category` fields for fast full-text search. The `usesCount` field increments atomically on each `db_snippet_run` call.
+
+---
+
+## Composing complex reports
+
+Use the three report tools together to build multi-table, multi-query reports without writing ad-hoc SQL each time.
+
+**Typical agent workflow:**
+
+```
+1. Discover schema:
+   db_describe_many { engine: "postgres", tables: ["orders", "users", "products"] }
+
+2. Generate a JOIN skeleton from FK relationships:
+   db_suggest_query { engine: "postgres", intent: "revenue by customer last 30 days",
+                      tables: ["orders", "users"] }
+   → returns SQL with JOIN + "-- intent:" comment; copy-paste or refine manually
+
+3. Save the finalized queries as categorized snippets:
+   db_snippet_save { engine: "postgres", name: "revenue-by-customer",
+                     body: "<sql>", category: "revenue-reports" }
+   db_snippet_save { engine: "postgres", name: "top-products",
+                     body: "<sql>", category: "revenue-reports" }
+
+4. Run both snippets together and merge results:
+   db_report_run { engine: "postgres",
+                   snippet_names: ["revenue-by-customer", "top-products"],
+                   merge: "object" }
+   → { "revenue-by-customer": [...rows], "top-products": [...rows] }
+
+5. Or union them into a single flat table for tabular display:
+   db_report_run { engine: "postgres",
+                   snippet_names: ["revenue-by-customer", "top-products"],
+                   merge: "union" }
+   → unified rows with _source column identifying the origin snippet
+```
+
+**Key properties:**
+- Write-guard is checked per-snippet before execution — safe to use in reports even when `DB_REGISTRY_ALLOW_WRITE` is unset.
+- Merged result is capped at 1000 rows. `_truncated: true` and `_total_rows: N` are included when truncation occurs.
+- `db_suggest_query` never emits cartesian products — disconnected tables are excluded and reported in `warnings[]`.
 
 ---
 
