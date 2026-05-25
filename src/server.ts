@@ -58,6 +58,39 @@ import { spawnSync } from "node:child_process";
 export { INSTRUCTIONS } from "./instructions.js";
 export { ALL_TOOLS } from "./tool-descriptors.js";
 
+/**
+ * Wraps tool handler results in MCP's required `{content: [...]}` envelope
+ * WITHOUT discarding the original payload. routeTool historically returned
+ * raw objects (e.g. {rows: [...], saved: true}); the existing stdio test
+ * suite parses those fields directly off the JSON-RPC result. To keep both
+ * MCP clients happy AND those tests, this helper merges:
+ *
+ *   - an MCP-compliant `content: [{type: "text", text: ...}]` block, and
+ *   - all original fields from `result` spread alongside it.
+ *
+ * Results that already include a `content` array are passed through unchanged
+ * (e.g. `toolError(...)` output).
+ */
+function wrapMcpResult(result: unknown): Record<string, unknown> {
+  if (
+    result &&
+    typeof result === "object" &&
+    Array.isArray((result as { content?: unknown }).content)
+  ) {
+    return result as Record<string, unknown>;
+  }
+  const text =
+    result === undefined || result === null
+      ? ""
+      : typeof result === "string"
+        ? result
+        : JSON.stringify(result, null, 2);
+  const base: Record<string, unknown> =
+    result && typeof result === "object" ? { ...(result as Record<string, unknown>) } : {};
+  base["content"] = [{ type: "text", text }];
+  return base;
+}
+
 export function detectGitRemote(): string | null {
   try {
     const r = spawnSync("git", ["remote", "get-url", "origin"], { encoding: "utf8" });
@@ -192,6 +225,7 @@ async function main(): Promise<void> {
         engine,
         connectionName,
         cwd,
+        project,
         store: credStore,
       }),
   };
@@ -213,7 +247,8 @@ async function main(): Promise<void> {
   server.setRequestHandler(CallToolRequestSchema, async (req) => {
     const { name, arguments: args = {} } = req.params;
     try {
-      return await routeTool(name, args as Record<string, unknown>, ctx);
+      const result = await routeTool(name, args as Record<string, unknown>, ctx);
+      return wrapMcpResult(result);
     } catch (err) {
       return toolError(err instanceof Error ? err.message : String(err));
     }

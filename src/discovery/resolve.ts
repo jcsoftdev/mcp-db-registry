@@ -18,6 +18,11 @@ export interface ResolveOpts {
   engine: Engine;
   connectionName: string;
   cwd: string;
+  /** Resolved project identity used by the credential store. Defaults to cwd
+   * for backwards compatibility, but callers SHOULD pass the same value used
+   * by `db_credentials_save` (i.e. resolved via util/project.projectId) so
+   * stored credentials can be looked up successfully. */
+  project?: string;
   store: StoreShape;
   portRegistry?: PortRegistryShape;
   /** Injected env file content for testing (skips fs.readFile when provided). */
@@ -88,14 +93,14 @@ export async function resolveConnection(opts: ResolveOpts): Promise<ResolvedConf
     return cached.config;
   }
 
-  // 1. Stored credential
+  // 1. Stored credential — keyed by resolved projectId (matches db_credentials_save).
   const stored = await opts.store.get({
-    project: opts.cwd,
+    project: opts.project ?? opts.cwd,
     engine: opts.engine,
     connectionName: opts.connectionName,
   });
   if (stored) {
-    const cfg = buildConfig({ host: stored, port: 0 }, opts.engine, "stored");
+    const cfg = parseStoredDsn(stored, opts.engine);
     cache(key, cfg);
     return cfg;
   }
@@ -163,4 +168,34 @@ export async function resolveConnection(opts: ResolveOpts): Promise<ResolvedConf
 
 function cache(key: string, config: ResolvedConfig, envMtime?: number, composeMtime?: number): void {
   CACHE.set(key, { config, envMtime, composeMtime });
+}
+
+/**
+ * Parses a stored DSN string into a ResolvedConfig. Supports two forms:
+ *  - Full connection URL (e.g. "postgres://user:pass@host:5432/db?sslmode=disable")
+ *  - Bare host (legacy behavior — port 0, no user/pass)
+ *
+ * URL form is preferred because drivers can connect directly and we surface
+ * the user/password/database that the caller supplied to `db_credentials_save`.
+ */
+function parseStoredDsn(stored: string, engine: Engine): ResolvedConfig {
+  // URL-like (scheme://...) — extract components.
+  if (/^[a-zA-Z][a-zA-Z0-9+.-]*:\/\//.test(stored)) {
+    try {
+      const u = new URL(stored);
+      const partial: { host: string; port: number; user?: string; password?: string; database?: string; url?: string } = {
+        host: u.hostname || "localhost",
+        port: u.port ? parseInt(u.port, 10) : 0,
+        url: stored,
+      };
+      if (u.username) partial.user = decodeURIComponent(u.username);
+      if (u.password) partial.password = decodeURIComponent(u.password);
+      const dbName = u.pathname.replace(/^\//, "");
+      if (dbName) partial.database = dbName;
+      return buildConfig(partial, engine, "stored");
+    } catch {
+      // fall through to bare-host fallback
+    }
+  }
+  return buildConfig({ host: stored, port: 0 }, engine, "stored");
 }
